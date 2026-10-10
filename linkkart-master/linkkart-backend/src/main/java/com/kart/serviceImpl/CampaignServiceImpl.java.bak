@@ -1,0 +1,116 @@
+package com.kart.serviceImpl;
+
+import com.kart.constants.RoleName;
+import com.kart.dto.campaign.CampaignRequest;
+import com.kart.dto.campaign.CampaignResponse;
+import com.kart.entity.Campaign;
+import com.kart.entity.Category;
+import com.kart.entity.User;
+import com.kart.exception.BadRequestException;
+import com.kart.exception.ResourceNotFoundException;
+import com.kart.repository.CampaignRepository;
+import com.kart.repository.CategoryRepository;
+import com.kart.repository.UserRepository;
+import com.kart.service.CampaignService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class CampaignServiceImpl implements CampaignService {
+    private final CampaignRepository campaignRepository;
+    private final CategoryRepository categoryRepository;
+    private final UserRepository userRepository;
+
+    @Override
+    public CampaignResponse create(CampaignRequest request) {
+        User merchant = getCurrentUser();
+        checkMerchantOrAdmin(merchant);
+
+
+        Campaign campaign = Campaign.builder()
+                .title(request.getTitle())
+                .commissionRate(request.getCommissionRate())
+                .status(request.getStatus() != null ? request.getStatus() : "ACTIVE")
+                .merchant(merchant)
+                .build();
+
+        return toResponse(campaignRepository.save(campaign));
+    }
+
+    @Override
+    public CampaignResponse update(Long id, CampaignRequest request) {
+        User user = getCurrentUser();
+        checkMerchantOrAdmin(user);
+        Campaign campaign = campaignRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Campaign not found"));
+        checkCampaignOwnership(campaign, user);
+        Category category = categoryRepository.findById(request.getCategoryId())
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+
+        campaign.setTitle(request.getTitle());
+        campaign.setCommissionRate(request.getCommissionRate());
+        campaign.setStatus(request.getStatus() != null ? request.getStatus() : "ACTIVE");
+
+
+        return toResponse(campaignRepository.save(campaign));
+    }
+
+    @Override
+    public void delete(Long id) {
+        User user = getCurrentUser();
+        checkMerchantOrAdmin(user);
+        Campaign campaign = campaignRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Campaign not found"));
+        checkCampaignOwnership(campaign, user);
+        campaignRepository.delete(campaign);
+    }
+
+    private void checkMerchantOrAdmin(User user) {
+        boolean isAllowed = "MERCHANT".equalsIgnoreCase(user.getRole().getName()) || "ADMIN".equalsIgnoreCase(user.getRole().getName());
+        if (!isAllowed) {
+            throw new org.springframework.security.access.AccessDeniedException("Only merchants can manage campaigns");
+        }
+    }
+
+    private void checkCampaignOwnership(Campaign campaign, User user) {
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(user.getRole().getName());
+        if (!isAdmin && (campaign.getMerchant() == null || !campaign.getMerchant().getId().equals(user.getId()))) {
+            throw new org.springframework.security.access.AccessDeniedException("You are not authorized to modify this campaign");
+        }
+    }
+
+    @Override
+    public List<CampaignResponse> getAll() {
+        return campaignRepository.findAll().stream().map(this::toResponse).toList();
+    }
+
+    @Override
+    public List<CampaignResponse> getMerchantCampaigns() {
+        User merchant = getCurrentUser();
+        return campaignRepository.findByMerchant(merchant).stream().map(this::toResponse).toList();
+    }
+
+    private User getCurrentUser() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new BadRequestException("Authenticated user not found"));
+    }
+
+    private CampaignResponse toResponse(Campaign campaign) {
+        return CampaignResponse.builder()
+                .id(campaign.getId())
+                .title(campaign.getTitle())
+                .commissionRate(campaign.getCommissionRate())
+                .status(campaign.getStatus())
+                .merchantId(campaign.getMerchant() != null ? campaign.getMerchant().getId() : null)
+                .merchantName(campaign.getMerchant() != null ? campaign.getMerchant().getEmail() : null)
+                .categoryId(null)
+                .categoryName(null)
+                .createdAt(campaign.getCreatedAt())
+                .build();
+    }
+}

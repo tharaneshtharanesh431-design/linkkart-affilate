@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: linkkart_db
+    environment:
+      MYSQL_DATABASE: linkkart
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3307:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+
+  backend:
+    build:
+      context: ./linkkart-backend
+      dockerfile: Dockerfile
+    container_name: linkkart_backend
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=jdbc:mysql://db:3306/linkkart?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      - DATABASE_USERNAME=root
+      - DATABASE_PASSWORD=root
+      - SPRING_PROFILES_ACTIVE=dev
+      - JWT_SECRET=test_secret_replace_me_in_prod_with_something_long
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./linkkart-frontend
+      dockerfile: Dockerfile
+    container_name: linkkart_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    depends_on:
+      - backend
+
+volumes:
+  db_data:

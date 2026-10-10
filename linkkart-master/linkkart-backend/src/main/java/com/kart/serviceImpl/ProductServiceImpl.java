@@ -1,0 +1,326 @@
+package com.kart.serviceImpl;
+
+import com.kart.constants.RoleName;
+import com.kart.dto.product.ProductRequest;
+import com.kart.dto.product.ProductResponse;
+import com.kart.entity.Category;
+import com.kart.entity.Organization;
+import com.kart.entity.OrganizationMember;
+import com.kart.entity.Product;
+import com.kart.entity.User;
+import com.kart.exception.BadRequestException;
+import com.kart.exception.ResourceNotFoundException;
+import com.kart.repository.AffiliateLinkRepository;
+import com.kart.repository.CategoryRepository;
+import com.kart.repository.OrganizationMemberRepository;
+import com.kart.repository.ProductRepository;
+import com.kart.repository.UserRepository;
+import com.kart.service.ProductService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.List;
+
+import com.kart.repository.CampaignRepository;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class ProductServiceImpl implements ProductService {
+    private final ProductRepository productRepository;
+    private final CategoryRepository categoryRepository;
+    private final UserRepository userRepository;
+    private final OrganizationMemberRepository organizationMemberRepository;
+    private final AffiliateLinkRepository affiliateLinkRepository;
+    private final CampaignRepository campaignRepository;
+
+    @Override
+    @Transactional
+    public ProductResponse create(ProductRequest request) {
+        User merchant = getCurrentUser();
+        checkMerchantOrAdmin(merchant);
+        
+        Organization organization = getOrganizationForUser(merchant);
+
+        Category category = categoryRepository.findById(request.getCategoryId())
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + request.getCategoryId()));
+
+        String status = "ACTIVE";
+        if (request.getStatus() != null && !request.getStatus().isBlank()) {
+            String upper = request.getStatus().trim().toUpperCase();
+            if ("ACTIVE".equals(upper) || "INACTIVE".equals(upper)) {
+                status = upper;
+            }
+        }
+
+        Product product = Product.builder()
+                .name(request.getName().trim())
+                .description(request.getDescription())
+                .imageUrl(request.getImageUrl())
+                .destinationUrl(request.getDestinationUrl())
+                .price(request.getPrice())
+                .status(status)
+                .organization(organization)
+                .category(category)
+                .build();
+
+        Product saved = productRepository.save(product);
+        
+
+
+        log.info("Product created successfully: id={}, name='{}', organization='{}'", saved.getId(), saved.getName(), organization.getName());
+        return toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public ProductResponse update(Long id, ProductRequest request) {
+        User user = getCurrentUser();
+        checkMerchantOrAdmin(user);
+
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+
+        checkProductOwnership(product, user);
+
+        Category category = categoryRepository.findById(request.getCategoryId())
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + request.getCategoryId()));
+
+        product.setName(request.getName().trim());
+        product.setDescription(request.getDescription());
+        product.setImageUrl(request.getImageUrl());
+        product.setDestinationUrl(request.getDestinationUrl());
+        product.setPrice(request.getPrice());
+        if (request.getStatus() != null && !request.getStatus().isBlank()) {
+            String upper = request.getStatus().trim().toUpperCase();
+            if ("ACTIVE".equals(upper) || "INACTIVE".equals(upper)) {
+                product.setStatus(upper);
+            }
+        }
+        product.setCategory(category);
+
+        Product updated = productRepository.save(product);
+        
+
+
+        log.info("Product updated successfully: id={}, name='{}' by user='{}'", updated.getId(), updated.getName(), user.getEmail());
+        return toResponse(updated);
+    }
+
+    @Override
+    @Transactional
+    public ProductResponse toggleStatus(Long id, String status) {
+        User user = getCurrentUser();
+        checkMerchantOrAdmin(user);
+
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+
+        checkProductOwnership(product, user);
+
+        String newStatus = "ACTIVE";
+        if (status != null) {
+            String upper = status.trim().toUpperCase();
+            if ("ACTIVE".equals(upper) || "INACTIVE".equals(upper)) {
+                newStatus = upper;
+            }
+        }
+        product.setStatus(newStatus);
+        Product saved = productRepository.save(product);
+        log.info("Product status toggled: id={}, status='{}'", saved.getId(), newStatus);
+        return toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public void delete(Long id) {
+        User user = getCurrentUser();
+        checkMerchantOrAdmin(user);
+
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+
+        checkProductOwnership(product, user);
+
+        // Safe deletion
+        boolean hasLinks = affiliateLinkRepository.existsByProductId(id);
+        if (hasLinks) {
+            product.setStatus("INACTIVE");
+            productRepository.save(product);
+        } else {
+            productRepository.delete(product);
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductResponse> getAll(String search, String category, Double minCommission, String sort) {
+        List<Product> products = productRepository.findAllByStatusOrderByIdDesc("ACTIVE");
+        if (products.isEmpty()) {
+            products = productRepository.findAllByOrderByIdDesc().stream()
+                    .filter(p -> p.getStatus() == null || !"INACTIVE".equalsIgnoreCase(p.getStatus()))
+                    .toList();
+        }
+        
+        java.util.stream.Stream<ProductResponse> stream = products.stream().map(this::toResponse);
+
+        if (search != null && !search.trim().isEmpty()) {
+            String lowerSearch = search.toLowerCase();
+            stream = stream.filter(p -> 
+                (p.getName() != null && p.getName().toLowerCase().contains(lowerSearch)) ||
+                (p.getDescription() != null && p.getDescription().toLowerCase().contains(lowerSearch)) ||
+                (p.getMerchantName() != null && p.getMerchantName().toLowerCase().contains(lowerSearch))
+            );
+        }
+
+        if (category != null && !category.trim().isEmpty() && !"all".equalsIgnoreCase(category)) {
+            String lowerCat = category.toLowerCase();
+            stream = stream.filter(p -> p.getCategoryName() != null && p.getCategoryName().toLowerCase().contains(lowerCat));
+        }
+
+        if (minCommission != null && minCommission > 0) {
+            BigDecimal minComm = BigDecimal.valueOf(minCommission);
+            stream = stream.filter(p -> p.getCommissionRate() != null && p.getCommissionRate().compareTo(minComm) >= 0);
+        }
+
+        List<ProductResponse> result = stream.collect(java.util.stream.Collectors.toList());
+
+        if (sort != null && !sort.trim().isEmpty()) {
+            switch (sort) {
+                case "commission_high":
+                    result.sort((a, b) -> {
+                        BigDecimal aComm = a.getCommissionRate() != null ? a.getCommissionRate() : BigDecimal.ZERO;
+                        BigDecimal bComm = b.getCommissionRate() != null ? b.getCommissionRate() : BigDecimal.ZERO;
+                        return bComm.compareTo(aComm);
+                    });
+                    break;
+                case "earnings_high":
+                    result.sort((a, b) -> {
+                        BigDecimal aEarn = a.getPotentialCommission() != null ? a.getPotentialCommission() : BigDecimal.ZERO;
+                        BigDecimal bEarn = b.getPotentialCommission() != null ? b.getPotentialCommission() : BigDecimal.ZERO;
+                        return bEarn.compareTo(aEarn);
+                    });
+                    break;
+                case "price_low":
+                    result.sort((a, b) -> {
+                        BigDecimal aPrice = a.getPrice() != null ? a.getPrice() : BigDecimal.ZERO;
+                        BigDecimal bPrice = b.getPrice() != null ? b.getPrice() : BigDecimal.ZERO;
+                        return aPrice.compareTo(bPrice);
+                    });
+                    break;
+                default:
+                    // default is popularity, which we might not have, so fallback to ID desc (already sorted this way initially)
+                    break;
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductResponse> getMerchantProducts() {
+        User user = getCurrentUser();
+        checkMerchantOrAdmin(user);
+
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(user.getRole().getName());
+
+        List<Product> products;
+        if (isAdmin) {
+            products = productRepository.findAllByOrderByIdDesc();
+        } else {
+            Organization organization = getOrganizationForUser(user);
+            products = productRepository.findByOrganizationOrderByIdDesc(organization);
+        }
+        return products.stream().map(this::toResponse).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ProductResponse getById(Long id) {
+        return toResponse(productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id)));
+    }
+
+    private Organization getOrganizationForUser(User user) {
+        if ("ADMIN".equalsIgnoreCase(user.getRole().getName())) {
+            return null; // Admins don't have an organization in this context
+        }
+        return organizationMemberRepository.findByUser(user).stream()
+                .findFirst()
+                .map(OrganizationMember::getOrganization)
+                .orElseThrow(() -> new BadRequestException("Merchant organization not found. Please complete onboarding."));
+    }
+
+    private void checkMerchantOrAdmin(User user) {
+        boolean isAllowed = "MERCHANT".equalsIgnoreCase(user.getRole().getName()) || "ADMIN".equalsIgnoreCase(user.getRole().getName());
+        if (!isAllowed) {
+            throw new AccessDeniedException("Forbidden: Only merchants or admins are authorized to perform this operation");
+        }
+    }
+
+    private void checkProductOwnership(Product product, User user) {
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(user.getRole().getName());
+        if (isAdmin) return;
+
+        Organization userOrganization = getOrganizationForUser(user);
+        if (product.getOrganization() == null || !product.getOrganization().getId().equals(userOrganization.getId())) {
+            throw new AccessDeniedException("Forbidden: You are not authorized to modify another organization's product");
+        }
+    }
+
+    private User getCurrentUser() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            throw new AccessDeniedException("Authentication required");
+        }
+        String email = auth.getName();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new BadRequestException("Authenticated user account not found"));
+    }
+
+    private ProductResponse toResponse(Product product) {
+        List<com.kart.entity.Campaign> activeCampaigns = campaignRepository.findActiveCampaignsByProductId(product.getId());
+        BigDecimal commissionRate = null;
+        String commissionType = null;
+        BigDecimal potentialCommission = null;
+
+        if (!activeCampaigns.isEmpty()) {
+            com.kart.entity.Campaign bestCampaign = activeCampaigns.stream()
+                .max((c1, c2) -> c1.getCommissionRate().compareTo(c2.getCommissionRate()))
+                .orElse(activeCampaigns.get(0));
+            commissionRate = bestCampaign.getCommissionRate();
+            commissionType = bestCampaign.getCommissionType();
+            
+            if ("PERCENTAGE".equalsIgnoreCase(commissionType) && product.getPrice() != null && commissionRate != null) {
+                potentialCommission = product.getPrice().multiply(commissionRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            } else if ("FLAT".equalsIgnoreCase(commissionType)) {
+                potentialCommission = commissionRate;
+            }
+        }
+
+        return ProductResponse.builder()
+                .id(product.getId())
+                .name(product.getName())
+                .description(product.getDescription())
+                .imageUrl(product.getImageUrl())
+                .destinationUrl(product.getDestinationUrl())
+                .price(product.getPrice())
+                .commissionRate(commissionRate)
+                .commissionType(commissionType)
+                .potentialCommission(potentialCommission)
+                .status(product.getStatus() != null ? product.getStatus() : "ACTIVE")
+                .categoryId(product.getCategory() != null ? product.getCategory().getId() : null)
+                .categoryName(product.getCategory() != null ? product.getCategory().getName() : null)
+                .merchantId(product.getOrganization() != null ? product.getOrganization().getId() : null)
+                .merchantName(product.getOrganization() != null ? product.getOrganization().getName() : null)
+                .createdAt(product.getCreatedAt())
+                .build();
+    }
+}

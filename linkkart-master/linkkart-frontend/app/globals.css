@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 260 100% 98%; /* #FBF9FF */
+    --foreground: 261 41% 15%; /* #291451 */
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 261 41% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 261 41% 15%;
+    --primary: 263 70% 50%; /* #6D28D9 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 265 89% 98%; /* #F6F0FF */
+    --secondary-foreground: 263 70% 50%;
+    --muted: 266 100% 95%; /* #F1E8FF */
+    --muted-foreground: 262 11% 42%; /* #675F78 */
+    --accent: 265 89% 98%; /* #F6F0FF */
+    --accent-foreground: 261 41% 15%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 267 59% 91%; /* #E9DDF7 */
+    --input: 267 59% 91%;
+    --ring: 263 70% 50%;
+    --radius: 0.75rem;
+
+    /* Custom Palette Tokens based on LIGHT BLUE THEME */
+    --page-bg: #F0F9FF; /* sky-50 */
+    --primary-brand: #0EA5E9; /* sky-500 */
+    --primary-hover: #0284C7; /* sky-600 */
+    --secondary-blue: #38BDF8; /* sky-400 */
+    --text-heading: #0C4A6E; /* sky-900 */
+    --text-body: #334155; /* slate-700 */
+    --text-muted: #64748B; /* slate-500 */
+    --border-light: #E0F2FE; /* sky-100 */
+    --border-strong: #BAE6FD; /* sky-200 */
+    --surface: #FFFFFF;
+    --surface-lavender: #F0F9FF;
+    --surface-section: #F4F4F5;
+    --surface-strong: #E0F2FE;
+    --surface-light-purple: #F0F9FF;
+    
+    --accent-sky: #38BDF8;
+    --accent-blue: #60A5FA;
+    --accent-coral: #FB7185;
+    --accent-green: #22C55E;
+    --accent-yellow: #FACC15;
+  }
+
+  .dark {
+    /* Keep existing dark variables for now, though not using dark theme */
+    --background: 260 100% 98%; 
+    --foreground: 261 41% 15%; 
+    --card: 0 0% 100%;
+    --card-foreground: 261 41% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 261 41% 15%;
+    --primary: 263 70% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 265 89% 98%; 
+    --secondary-foreground: 263 70% 50%;
+    --muted: 266 100% 95%; 
+    --muted-foreground: 262 11% 42%; 
+    --accent: 265 89% 98%; 
+    --accent-foreground: 261 41% 15%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 267 59% 91%;
+    --input: 267 59% 91%;
+    --ring: 263 70% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    background-color: var(--page-bg);
+    color: var(--text-body);
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--text-heading);
+  }
+}
+
+@layer utilities {
+  .hero-gradient {
+    background: linear-gradient(180deg, #E0F2FE 0%, #F0F9FF 40%, #F8FAFC 100%);
+  }
+
+  .cta-gradient {
+    background: linear-gradient(135deg, #BAE6FD, #0EA5E9);
+  }
+
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--border-light);
+    box-shadow: 0 8px 30px rgba(14, 165, 233, 0.06);
+  }
+
+  .card-shadow-sm {
+    box-shadow: 0 6px 20px rgba(14, 165, 233, 0.05);
+  }
+
+  .card-shadow-md {
+    box-shadow: 0 12px 32px rgba(14, 165, 233, 0.08);
+  }
+  
+  .card-shadow-lg {
+    box-shadow: 0 20px 50px rgba(14, 165, 233, 0.10);
+  }
+
+  .hover-lift {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 40px rgba(14, 165, 233, 0.08);
+    border-color: #7DD3FC;
+  }
+  
+  .btn-primary {
+    background: var(--primary-brand);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 999px;
+    height: 48px;
+    padding: 0 24px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+  }
+  
+  .btn-primary:hover {
+    background: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(14, 165, 233, 0.22);
+  }
+  
+  .btn-secondary {
+    background: #FFFFFF;
+    color: var(--primary-hover);
+    border: 1px solid var(--primary-light);
+    border-radius: 999px;
+    height: 48px;
+    padding: 0 24px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+  }
+  
+  .btn-secondary:hover {
+    background: var(--surface-lavender);
+    border-color: var(--primary-brand);
+  }
+}
